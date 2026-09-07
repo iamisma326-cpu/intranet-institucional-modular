@@ -7,6 +7,10 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- El DatabaseInitializer busca este archivo en AppContext.BaseDirectory/Sql/ -->
+    <None Include="Sql/schema.sql" CopyToOutputDirectory="PreserveNewest" Link="Sql/modulo02_schema.sql" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../01_Core/Intranet.Core/Intranet.Core.csproj" />

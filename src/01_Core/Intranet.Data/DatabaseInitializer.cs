@@ -57,6 +57,7 @@ public static class DatabaseInitializer
         if (string.IsNullOrEmpty(defaultConn)) return;
 
         var baseDir = AppContext.BaseDirectory;
+        var currentDir = Directory.GetCurrentDirectory();
 
         for (int i = 1; i <= 9; i++)
         {
@@ -64,9 +65,14 @@ public static class DatabaseInitializer
             var dbName = $"db_modulo{num}";
             
             // Buscar si existe un archivo schema.sql en las rutas del módulo
+            // Orden: (1) copia junto al binario (dotnet run / publish / Docker),
+            //        (2-3) rutas relativas al directorio de trabajo actual,
+            //        (4-5) rutas relativas al binario como fallback histórico.
             var possiblePaths = new[]
             {
                 Path.Combine(baseDir, "Sql", $"modulo{num}_schema.sql"),
+                Path.Combine(currentDir, "src", "02_Modulos", $"Intranet.Modulo{num}", "Sql", "schema.sql"),
+                Path.Combine(currentDir, "02_Modulos", $"Intranet.Modulo{num}", "Sql", "schema.sql"),
                 Path.Combine(baseDir, "..", "..", "..", "..", "02_Modulos", $"Intranet.Modulo{num}", "Sql", "schema.sql"),
                 Path.Combine(baseDir, "src", "02_Modulos", $"Intranet.Modulo{num}", "Sql", "schema.sql")
             };
