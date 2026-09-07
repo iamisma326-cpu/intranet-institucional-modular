@@ -27,7 +27,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
 
       - name: 4. Despliegue Automático en mili3 vía SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -37,6 +39,9 @@ jobs:
           key: ${{ secrets.MILI3_SSH_KEY }}
           script: |
             cd /home/fob/services/app-net
+            # Registrar el SHA desplegado (trazabilidad: latest siempre identificable)
+            echo "${{ github.sha }}" > .deployed-sha
             docker compose pull app
             docker compose up -d app
-            echo ">>> DESPLIEGUE EXITOSO EN MILI3 <<<"
+            echo ">>> DESPLIEGUE EXITOSO EN MILI3 (commit ${{ github.sha }}) <<<"
+            echo ">>> Rollback: docker tag ghcr.io/${{ github.repository }}:<sha-anterior> ghcr.io/${{ github.repository }}:latest && docker compose up -d app <<<"

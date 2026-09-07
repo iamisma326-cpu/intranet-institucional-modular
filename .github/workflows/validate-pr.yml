@@ -13,6 +13,21 @@ jobs:
   validate-and-automerge:
     runs-on: ubuntu-latest
     name: Validar Límites, Compilar y Auto-Merge
+
+    # MariaDB real para el smoke test funcional (login + arranque)
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: ci_root_2026
+        ports:
+          - '3306:3306'
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_status"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: 1. Checkout del código
         uses: actions/checkout@v4
@@ -58,12 +73,26 @@ jobs:
               fi
             done
           else
-            # Si el nombre de la rama no tiene 'modulo-XX', prohibir tocar Core, Web y configs
+            # Rama sin prefijo moduloXX: NO se puede tocar código ni carpeta de
+            # NINGÚN módulo (propio o ajeno), ni Core, Web ni configuración.
+            # Solo documentación neutral: *.md de la raíz y carpeta docs/.
+            echo "⚠️ Rama sin prefijo 'moduloXX': solo se permiten cambios de documentación neutral."
+            
             for file in $CHANGED_FILES; do
-              if [[ "$file" == "src/01_Core/"* ]] || [[ "$file" == "src/03_Web/"* ]] || [[ "$file" == ".github/"* ]] || [[ "$file" == "Dockerfile" ]] || [[ "$file" == "Directory.Build.props" ]]; then
-                echo "❌ VIOLACIÓN: No tienes permisos para modificar el Core o Configuración: '$file'."
-                VIOLATIONS=$((VIOLATIONS + 1))
-              fi
+              case "$file" in
+                src/*|Dockerfile*|*.sln*|*.slnx|Directory.Build.props|.github/*|dev.sh|dev.ps1|scripts/*)
+                  echo "❌ VIOLACIÓN: Rama sin módulo asignado no puede modificar código ni configuración: '$file'."
+                  echo "   Renombra tu rama a moduloXX/<tarea> (opción 2 de dev.sh) para programar."
+                  VIOLATIONS=$((VIOLATIONS + 1))
+                  ;;
+                *.md|docs/*)
+                  echo "✅ Documentación permitida: '$file'"
+                  ;;
+                *)
+                  echo "❌ VIOLACIÓN: Archivo no permitido para rama sin módulo: '$file' (solo *.md y docs/)."
+                  VIOLATIONS=$((VIOLATIONS + 1))
+                  ;;
+              esac
             done
           fi
           
@@ -88,7 +117,78 @@ jobs:
           dotnet build "IntranetInstitucional.sln" -c Release --no-restore
           echo "✅ COMPILACIÓN EXITOSA (0 Errores)."
 
-      - name: 5. Auto-Merge a la rama main
+      - name: 5. Smoke Test Funcional (MariaDB + Login real)
+        env:
+          ConnectionStrings__DefaultConnection: "Server=127.0.0.1;Port=3306;Database=db_core;User=root;Password=ci_root_2026;"
+        run: |
+          echo "🧪 Provisionando BDs del smoke test..."
+          mariadb -h 127.0.0.1 -P 3306 -u root -pci_root_2026 < scripts/provision_dbs.sql > /dev/null 2>&1 || \
+          mysql  -h 127.0.0.1 -P 3306 -u root -pci_root_2026 < scripts/provision_dbs.sql > /dev/null 2>&1 || \
+          docker run --rm --network host -v "$PWD/scripts:/scripts:ro" mariadb:10.11 \
+            mariadb -h 127.0.0.1 -P 3306 -u root -pci_root_2026 -e "source /scripts/provision_dbs.sql" > /dev/null 2>&1 || \
+          { echo "⛔ No se pudo provisionar MariaDB para el smoke test"; exit 1; }
+          
+          echo "🚀 Arrancando la Intranet en segundo plano..."
+          cd src/03_Web/Intranet.Web
+          nohup dotnet run -c Release --no-restore --no-build --urls http://localhost:5000 > /tmp/app.log 2>&1 &
+          APP_PID=$!
+          cd ../../..
+          
+          # Esperar a que el servidor responda (máx 60s)
+          for i in $(seq 1 60); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/Account/Login || true)
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Aplicación arriba (intento ${i})"
+              break
+            fi
+            sleep 1
+          done
+          if [ "$CODE" != "200" ]; then
+            echo "⛔ La aplicación no arrancó. Últimos logs:"
+            tail -30 /tmp/app.log
+            kill $APP_PID 2>/dev/null || true
+            exit 1
+          fi
+          
+          echo "🔐 Probando login del formulario real (regresión del binding campo/parámetro)..."
+          JAR=/tmp/cookies.jar
+          rm -f $JAR
+          LOGIN_HTML=$(curl -s -c $JAR http://localhost:5000/Account/Login)
+          TOKEN=$(echo "$LOGIN_HTML" | grep -o 'name="__RequestVerificationToken"[^>]*value="[^"]*"' | sed 's/.*value="//; s/"$//' | head -1)
+          if [ -z "$TOKEN" ]; then
+            echo "⛔ No se encontró el token antiforgery en el formulario de login."
+            kill $APP_PID 2>/dev/null || true
+            exit 1
+          fi
+          
+          # Extraer el name REAL del campo identificador del formulario (no el que
+          # supone el test). Si la vista manda un name que el controlador no
+          # espera, el binding falla y este smoke test lo detecta.
+          FIELD=$(echo "$LOGIN_HTML" | grep -o '<input type="text" name="[^"]*"' | sed 's/.*name="//; s/"$//' | head -1)
+          if [ -z "$FIELD" ]; then
+            echo "⛔ No se encontró el input de texto del formulario de login."
+            kill $APP_PID 2>/dev/null || true
+            exit 1
+          fi
+          echo "➡️  Campo identificador en el formulario: name=\"$FIELD\""
+          
+          HTTP=$(curl -s -b $JAR -c $JAR -o /dev/null -w "%{http_code}" \
+            -X POST http://localhost:5000/Account/Login \
+            --data-urlencode "__RequestVerificationToken=$TOKEN" \
+            --data-urlencode "$FIELD=10000001" \
+            --data-urlencode "password=123456")
+          kill $APP_PID 2>/dev/null || true
+          
+          echo "➡️  POST /Account/Login ($FIELD=10000001, password=123456) → HTTP $HTTP"
+          if [ "$HTTP" != "302" ]; then
+            echo "⛔ Smoke test FALLÓ: el login debe redirigir (302) al autenticar. Se recibió $HTTP."
+            echo "   Causa probable: el name del input del formulario ('$FIELD') no coincide con"
+            echo "   el parámetro que espera AccountController.Login (identificador)."
+            exit 1
+          fi
+          echo "✅ SMOKE TEST EXITOSO: login funcional end-to-end."
+
+      - name: 6. Auto-Merge a la rama main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
