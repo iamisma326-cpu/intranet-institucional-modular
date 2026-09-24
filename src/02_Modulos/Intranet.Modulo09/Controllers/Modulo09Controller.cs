@@ -3,6 +3,12 @@ using Intranet.Core.Controllers;
 
 namespace Intranet.Modulo09.Controllers;
 
+/// <summary>
+/// Entrada del Módulo 09. El botón "09. Tesorería" del menú global
+/// aterriza aquí y redirige a la pantalla real del equipo:
+///   Alumno    → Mis Trámites TUPA
+///   Personal   → Mesa de trámites
+/// </summary>
 [Route("Modulo09")]
 public class Modulo09Controller : ModuloBaseController
 {
@@ -10,11 +16,6 @@ public class Modulo09Controller : ModuloBaseController
     [HttpGet("Index")]
     public IActionResult Index()
     {
-        ViewData["Title"] = "Módulo 09 - Panel Principal";
-        ViewData["TeamName"] = "Equipo 09";
-        ViewData["UsuarioNombre"] = UsuarioActualNombre;
-        ViewData["UsuarioRol"] = UsuarioActualRol;
-
-        return View();
+        return RedirectToAction("Index", "Tramites");
     }
 }
