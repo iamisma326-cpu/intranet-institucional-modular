@@ -1,0 +1,93 @@
+@model Intranet.Modulo09.Models.TramiteDetalleDto
+@{
+    ViewData["Title"] = $"Trámite {Model.Codigo}";
+}
+
+<div class="space-y-6">
+    <!-- Ficha TUPA del trámite -->
+    <div class="bg-white dark:bg-[#111827] rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+        <div class="flex justify-between items-start flex-wrap gap-3">
+            <div>
+                <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">@Model.Codigo</h1>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    @Model.TipoCodigo · @Model.TipoNombre — @Model.Estudiante (@Model.CodigoEstudiante)
+                </p>
+            </div>
+            <span class="badge @(Model.Estado == "Aprobado" ? "badge-success" : Model.Estado == "Rechazado" ? "badge-error" : Model.Estado == "Entregado" ? "badge-accent" : "badge-warning") badge-sm font-semibold text-white">@Model.Estado</span>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5 text-xs">
+            <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-3">
+                <span class="text-[10px] font-bold text-slate-400 uppercase block">Solicitado</span>
+                <span class="font-mono font-semibold text-slate-800 dark:text-slate-200">@Model.FechaSolicitud.ToString("dd/MM/yyyy")</span>
+            </div>
+            <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-3">
+                <span class="text-[10px] font-bold text-slate-400 uppercase block">Límite TUPA</span>
+                <span class="font-mono font-semibold text-slate-800 dark:text-slate-200">@Model.FechaLimite?.ToString("dd/MM/yyyy")</span>
+            </div>
+            <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-3">
+                <span class="text-[10px] font-bold text-slate-400 uppercase block">Derecho de pago</span>
+                <span class="font-semibold text-slate-800 dark:text-slate-200">@Model.PagoCodigo · S/ @Model.PagoMonto</span>
+            </div>
+            <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-3">
+                <span class="text-[10px] font-bold text-slate-400 uppercase block">Resolución</span>
+                @if (!string.IsNullOrEmpty(Model.Resolucion))
+                {
+                    <span class="font-semibold text-rose-600 dark:text-rose-400">"@Model.Resolucion"</span>
+                }
+                else
+                {
+                    <span class="text-slate-400">—</span>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Requisitos con su estado -->
+    <div class="bg-white dark:bg-[#111827] rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-6">
+        <h2 class="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-4">📎 Requisitos presentados</h2>
+        <div class="space-y-2">
+            @foreach (var r in Model.Requisitos)
+            {
+                <div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3">
+                    <span class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-[10px] font-bold font-mono">@r.Orden</span>
+                    <div class="flex-1">
+                        <p class="text-xs font-medium text-slate-800 dark:text-slate-200">@r.Requisito</p>
+                        @if (!string.IsNullOrEmpty(r.Observacion))
+                        {
+                            <p class="text-[11px] text-rose-500 mt-0.5">⚠️ @r.Observacion</p>
+                        }
+                    </div>
+                    @if (r.Presentado)
+                    {
+                        <span class="badge badge-success badge-xs font-semibold text-white">Presentado</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-ghost badge-xs">Falta</span>
+                    }
+
+                    <!-- Corregir: solo si el trámite está Observado/Rechazado (rol alumno) -->
+                    @if ((Model.Estado == "Observado" || Model.Estado == "Rechazado") && (User.IsInRole("Alumno") || User.IsInRole("Admin")))
+                    {
+                        <form method="post" asp-controller="Tramites" asp-action="Corregir" asp-route-id="@Model.Id">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="requisitoId" value="@r.Id" />
+                            <button type="submit" class="btn btn-warning btn-xs rounded-xl font-bold">Re-adjuntar</button>
+                        </form>
+                    }
+                </div>
+            }
+        </div>
+        @if (Model.Estado == "Observado" || Model.Estado == "Rechazado")
+        {
+            <p class="text-[11px] text-slate-400 mt-3">
+                Al re-adjuntar el archivo observado, el trámite vuelve a <strong>En evaluación</strong>. No se crea un trámite nuevo.
+            </p>
+        }
+    </div>
+
+    <div>
+        <a class="btn btn-ghost btn-sm rounded-xl" asp-controller="Tramites" asp-action="Index">← Volver</a>
+    </div>
+</div>

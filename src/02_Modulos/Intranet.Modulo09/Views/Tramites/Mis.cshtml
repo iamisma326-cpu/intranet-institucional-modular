@@ -1,0 +1,143 @@
+@model Intranet.Modulo09.Controllers.MisTramitesViewModel
+@{
+    ViewData["Title"] = "Mis Trámites TUPA";
+}
+
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="bg-white dark:bg-[#111827] rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl shrink-0">📄</div>
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded">09</span>
+                    <span class="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/40 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">TUPA 2026</span>
+                </div>
+                <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Mis trámites</h1>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Solicitudes TUPA a tu nombre. Los documentos se adjuntan al crear el trámite.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtro -->
+    <form method="get" class="flex gap-2 items-center">
+        <select name="estado" class="select select-sm select-bordered rounded-xl dark:bg-slate-800 text-xs">
+            <option value="">Todos los estados</option>
+            @foreach (var e in new[] { "Recibido", "En evaluación", "Aprobado", "Observado", "Rechazado", "Entregado" })
+            {
+                <option value="@e" selected="@(Model.FiltroEstado == e)">@e</option>
+            }
+        </select>
+        <button type="submit" class="btn btn-outline btn-sm rounded-xl text-xs">Filtrar</button>
+    </form>
+
+    <!-- Tabla de trámites -->
+    <div class="bg-white dark:bg-[#111827] rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="table table-zebra w-full text-xs">
+                <thead>
+                    <tr class="text-slate-400 dark:text-slate-500 uppercase text-[10px]">
+                        <th>Código</th>
+                        <th>Tipo</th>
+                        <th>F. solicitud</th>
+                        <th>Estado</th>
+                        <th class="text-right">Días</th>
+                        <th>Requisitos</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="text-slate-700 dark:text-slate-300">
+                    @if (!Model.Tramites.Any())
+                    {
+                        <tr><td colspan="7" class="text-center text-slate-400 italic py-6">Sin trámites aún. Crea uno abajo.</td></tr>
+                    }
+                    @foreach (var t in Model.Tramites)
+                    {
+                        <tr>
+                            <td class="font-mono font-bold text-emerald-600 dark:text-emerald-400">@t.Codigo</td>
+                            <td>@t.TipoCodigo · @t.TipoNombre</td>
+                            <td class="text-slate-400 font-mono">@t.FechaSolicitud.ToString("dd/MM/yyyy")</td>
+                            <td><span class="badge @t.ColorChip badge-xs font-semibold text-white">@t.Estado</span></td>
+                            <td class="text-right font-mono @(t.Dias > 15 ? "text-rose-500 font-bold" : "text-slate-400")">@t.Dias</td>
+                            <td class="font-mono">@t.RequisitosOk/@t.RequisitosTotal</td>
+                            <td><a class="btn btn-ghost btn-xs rounded-xl" asp-action="Detalle" asp-route-id="@t.Id">Ver ficha</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Nuevo trámite: tipo → requisitos dinámicos (AJAX) + ficha TUPA -->
+    <div class="bg-white dark:bg-[#111827] rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-6">
+        <h2 class="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-4">📄 Nuevo trámite</h2>
+
+        <form method="post" asp-action="Crear" id="formNuevoTramite">
+            @Html.AntiForgeryToken()
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="text-[11px] font-bold block mb-1">Tipo de trámite (TUPA) *</label>
+                    <select name="tipoTramite" id="selTipo" class="select select-sm select-bordered w-full rounded-xl dark:bg-slate-800 text-xs" required>
+                        <option value="">Selecciona…</option>
+                        @foreach (var t in Model.Tipos)
+                        {
+                            <option value="@t.Codigo">@t.Codigo · @t.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="text-[11px] font-bold block mb-1">Observaciones (opcional)</label>
+                    <input type="text" name="observaciones" class="input input-sm input-bordered w-full rounded-xl dark:bg-slate-800 text-xs" placeholder="Ej: adjunto voucher N° 12345" />
+                </div>
+            </div>
+
+            <!-- Ficha TUPA embebida (se llena por JS al elegir tipo) -->
+            <div id="fichaTupa" class="hidden bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700 p-4 mb-4 text-xs">
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Procedimiento</span><span id="fNombre" class="font-semibold text-slate-800 dark:text-slate-200"></span></div>
+                    <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Cód. TUPA</span><span id="fCodigo" class="font-mono font-semibold text-emerald-600 dark:text-emerald-400"></span></div>
+                    <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Plazo</span><span id="fPlazo" class="font-mono font-semibold"></span> <span class="text-slate-400 text-[10px]">días hábiles</span></div>
+                    <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Derecho de pago</span><span id="fPago" class="font-semibold text-slate-800 dark:text-slate-200"></span></div>
+                </div>
+                <div class="mt-3">
+                    <span class="text-slate-400 block text-[10px] uppercase font-bold mb-1">Requisitos (todos obligatorios)</span>
+                    <ul id="fRequisitos" class="space-y-1"></ul>
+                </div>
+                <div class="alert alert-warning rounded-xl mt-3 text-[11px] py-2">
+                    ⚠️ Sin <strong>todos</strong> los archivos adjuntos el trámite no se registra. Documentos en PDF, foto de carné en imagen (JPG/PNG).
+                </div>
+            </div>
+
+            <div class="flex gap-2 justify-end">
+                <button type="reset" class="btn btn-ghost btn-sm rounded-xl">Cancelar</button>
+                <button type="submit" class="btn btn-primary btn-sm rounded-xl font-bold" id="btnEnviar" disabled>Enviar solicitud</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        const selTipo = document.getElementById('selTipo');
+        const ficha = document.getElementById('fichaTupa');
+        const btnEnviar = document.getElementById('btnEnviar');
+        selTipo.addEventListener('change', async () => {
+            const codigo = selTipo.value;
+            if (!codigo) { ficha.classList.add('hidden'); btnEnviar.disabled = true; return; }
+            const resp = await fetch(`/Modulo09/Tramites/Requisitos/${codigo}`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            document.getElementById('fNombre').textContent = data.tipo.nombre;
+            document.getElementById('fCodigo').textContent = data.tipo.codigo;
+            document.getElementById('fPlazo').textContent = data.tipo.diasHabiles;
+            document.getElementById('fPago').textContent =
+                `${data.tipo.pagoCodigo} · ${data.tipo.pagoNombre} (S/ ${data.tipo.pagoMonto})`;
+            const ul = document.getElementById('fRequisitos');
+            ul.innerHTML = data.requisitos.map(r =>
+                `<li class="flex items-center gap-2"><span class="text-slate-400 font-mono">${r.orden}.</span> ${r.requisito} <span class="text-[10px] text-slate-400">(adjuntar archivo)</span></li>`
+            ).join('');
+            ficha.classList.remove('hidden');
+            btnEnviar.disabled = false;
+        });
+    </script>
+}
